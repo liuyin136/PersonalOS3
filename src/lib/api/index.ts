@@ -1,0 +1,6 @@
+export * from './client'
+export { ingestApi } from './ingest'
+export { searchApi } from './search'
+export { cartApi } from './cart'
+export { chatApi, builtinTemplates } from './chat'
+export { knowledgeApi } from './knowledge'
