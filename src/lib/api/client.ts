@@ -1,18 +1,15 @@
 /**
- * Base API client for the FastAPI + LangChain backend.
+ * Base API client.
  *
- * In production: NEXT_PUBLIC_API_BASE_URL points to the FastAPI service
- * (e.g. http://api-server:8000 or http://localhost:8000).
+ * The browser calls relative paths like /api/ingest/documents (same origin).
+ * The matching Next.js route handler proxies the request to the FastAPI
+ * backend via the server-side BACKEND_URL env var (see src/lib/proxy.ts).
  *
- * By default NEXT_PUBLIC_API_BASE_URL is '' (same origin), so calls hit
- * the Next.js API routes under /app/api/* which mirror the backend
- * contract using Prisma + SQLite + JS cosine similarity.
- *
- * The contract is identical — only the implementation differs.
+ * This single-origin pattern avoids CORS issues and keeps the backend
+ * internal to the Docker network.
  */
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? ''
+export const API_BASE_URL = ''
 
 export class ApiError extends Error {
   status: number
@@ -31,7 +28,7 @@ interface RequestOptions {
   signal?: AbortSignal
 }
 
-/** Generic JSON request against the configured API base URL. */
+/** Generic JSON request against the same-origin Next.js API routes. */
 export async function request<T>(
   path: string,
   options: RequestOptions = {},

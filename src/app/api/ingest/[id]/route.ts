@@ -1,31 +1,11 @@
-import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { NextRequest } from 'next/server'
+import { proxyToBackend } from '@/lib/proxy'
 
-/**
- * DELETE /api/ingest/:id
- * Delete a document and its chunks (cascade handles chunks at the DB level
- * via the Prisma relation, but we also delete chunks explicitly to be safe).
- */
+/** DELETE /api/ingest/:id → backend DELETE /ingest/:id */
 export async function DELETE(
-  _req: Request,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  try {
-    const { id } = await params
-    const doc = await db.document.findUnique({ where: { id } })
-    if (!doc) {
-      return NextResponse.json(
-        { error: 'Document not found' },
-        { status: 404 },
-      )
-    }
-    await db.document.delete({ where: { id } })
-    return new NextResponse(null, { status: 204 })
-  } catch (e) {
-    console.error('[DELETE /api/ingest/:id]', e)
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : 'Delete failed' },
-      { status: 500 },
-    )
-  }
+  const { id } = await params
+  return proxyToBackend(`/ingest/${id}`, undefined, { method: 'DELETE' })
 }

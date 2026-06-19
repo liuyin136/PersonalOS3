@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # ---- PostgreSQL with pgvector ----
   personalos-db:
     image: pgvector/pgvector:pg16
     container_name: personalos_postgres
@@ -18,21 +19,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.standalone
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://api-server:8000
-    depends_on:
-      - api-server
     restart: always
 
+  # ---- Redis (Arq broker + cache) ----
   redis:
     image: redis:7-alpine
+    container_name: personalos_redis
     volumes:
       - redis_data:/data
     healthcheck:
@@ -42,20 +34,22 @@ services:
       retries: 10
     restart: always
 
+  # ---- FastAPI backend ----
   api-server:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: personalos_api
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     environment:
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql+asyncpg://postgres:mysecretpassword@personalos-db:5432/personalos
       - MARKDOWN_DIR=/data/markdown
       - PIC_DIR=/data/pic
-      - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
+      - CORS_ORIGINS=http://localhost:3000
     volumes:
-      - ./data/markdown:/data/markdown
-      - ./data/pic:/data/pic
+      - markdown_data:/data/markdown
+      - pic_data:/data/pic
     depends_on:
       personalos-db:
         condition: service_healthy
@@ -65,10 +59,12 @@ services:
       - "8000:8000"
     restart: always
 
+  # ---- Arq background worker ----
   ai-worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: personalos_worker
     command: arq worker.WorkerSettings
     tty: true
     stdin_open: true
@@ -78,8 +74,8 @@ services:
       - MARKDOWN_DIR=/data/markdown
       - PIC_DIR=/data/pic
     volumes:
-      - ./data/markdown:/data/markdown
-      - ./data/pic:/data/pic
+      - markdown_data:/data/markdown
+      - pic_data:/data/pic
     depends_on:
       personalos-db:
         condition: service_healthy
@@ -91,6 +87,23 @@ services:
           memory: 1G
     restart: always
 
+  # ---- Next.js frontend (standalone) ----
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.standalone
+    container_name: personalos_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - BACKEND_URL=http://api-server:8000
+      - NEXT_PUBLIC_API_BASE_URL=
+    depends_on:
+      - api-server
+    restart: always
+
 volumes:
   personalos_db_data:
   redis_data:
+  markdown_data:
+  pic_data:

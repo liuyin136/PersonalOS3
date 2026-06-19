@@ -1,22 +1,20 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { chunkText, embed } from '@/lib/rag/rag'
-import { mapDoc } from '@/lib/rag/mappers'
+import { proxyToBackend } from '@/lib/proxy'
 
-/** Sample markdown documents for the seed endpoint. */
+/** Sample markdown documents for first-time setup. */
 const SAMPLE_DOCS: {
   title: string
-  sourceType: string
-  sourceUri: string
+  source_type: string
+  source_uri: string
   namespace: string
   tags: string[]
-  chunking: { strategy: 'markdown'; chunk_size: 600; chunk_overlap: 100 }
+  chunking: { strategy: string; chunk_size: number; chunk_overlap: number }
   content: string
 }[] = [
   {
     title: 'RAG Architecture Overview',
-    sourceType: 'markdown',
-    sourceUri: 'docs/rag-architecture.md',
+    source_type: 'markdown',
+    source_uri: 'docs/rag-architecture.md',
     namespace: 'engineering',
     tags: ['rag', 'architecture', 'retrieval'],
     chunking: { strategy: 'markdown', chunk_size: 600, chunk_overlap: 100 },
@@ -38,8 +36,8 @@ In parent-document reranking, chunks are scored individually, then aggregated pe
   },
   {
     title: 'Chunking Strategies',
-    sourceType: 'markdown',
-    sourceUri: 'docs/chunking-strategies.md',
+    source_type: 'markdown',
+    source_uri: 'docs/chunking-strategies.md',
     namespace: 'engineering',
     tags: ['rag', 'chunking', 'embeddings'],
     chunking: { strategy: 'markdown', chunk_size: 600, chunk_overlap: 100 },
@@ -65,8 +63,8 @@ Semantic chunking groups adjacent sentences by embedding similarity. Boundaries 
   },
   {
     title: 'Prompt Engineering Best Practices',
-    sourceType: 'markdown',
-    sourceUri: 'docs/prompt-engineering.md',
+    source_type: 'markdown',
+    source_uri: 'docs/prompt-engineering.md',
     namespace: 'engineering',
     tags: ['llm', 'prompt', 'best-practices'],
     chunking: { strategy: 'markdown', chunk_size: 600, chunk_overlap: 100 },
@@ -94,81 +92,42 @@ Lower temperature (0.2-0.4) produces focused, factual answers — ideal for RAG 
 
 /**
  * POST /api/seed
- * Seed 2-3 sample markdown documents into the 'engineering' namespace.
- * Idempotent: skips documents whose title already exists.
+ * Seed 3 sample markdown documents by calling the backend ingest endpoint.
+ * Idempotent: the backend creates or skips based on existing titles.
  */
 export async function POST() {
   try {
-    const created: Record<string, unknown>[] = []
+    const results: Record<string, unknown>[] = []
+
+    // Fetch existing docs to skip duplicates
+    const existingRes = await proxyToBackend('/ingest/documents')
+    let existingTitles: string[] = []
+    if (existingRes.ok) {
+      const existing = await existingRes.json()
+      existingTitles = (existing as { title: string }[]).map((d) => d.title)
+    }
 
     for (const sd of SAMPLE_DOCS) {
-      const existing = await db.document.findFirst({
-        where: { title: sd.title },
-      })
-      if (existing) {
-        created.push({ skipped: sd.title, reason: 'already exists' })
+      if (existingTitles.includes(sd.title)) {
+        results.push({ skipped: sd.title, reason: 'already exists' })
         continue
       }
 
-      const namespace = await db.namespace.upsert({
-        where: { name: sd.namespace },
-        update: {},
-        create: {
-          name: sd.namespace,
-          description: 'Engineering knowledge base (seeded)',
-        },
+      const res = await proxyToBackend('/ingest', undefined, {
+        method: 'POST',
+        body: JSON.stringify(sd),
+        headers: { 'Content-Type': 'application/json' },
       })
 
-      const doc = await db.document.create({
-        data: {
-          title: sd.title,
-          sourceType: sd.sourceType,
-          sourceUri: sd.sourceUri,
-          namespaceId: namespace.id,
-          tags: JSON.stringify(sd.tags),
-          markdownPath: sd.content,
-          status: 'chunking',
-          progress: 10,
-          metadata: JSON.stringify({ chunking: sd.chunking }),
-        },
-        include: { namespace: true },
-      })
-
-      const chunks = chunkText(sd.content, {
-        strategy: sd.chunking.strategy,
-        chunkSize: sd.chunking.chunk_size,
-        chunkOverlap: sd.chunking.chunk_overlap,
-      })
-
-      if (chunks.length > 0) {
-        await db.chunk.createMany({
-          data: chunks.map((c) => ({
-            documentId: doc.id,
-            namespaceId: namespace.id,
-            chunkIndex: c.index,
-            content: c.content,
-            tokenCount: c.tokenCount,
-            embedding: JSON.stringify(embed(c.content)),
-          })),
-        })
+      if (res.ok) {
+        const doc = await res.json()
+        results.push(doc)
+      } else {
+        results.push({ error: sd.title, reason: `HTTP ${res.status}` })
       }
-
-      const totalTokens = chunks.reduce((s, c) => s + c.tokenCount, 0)
-      const updated = await db.document.update({
-        where: { id: doc.id },
-        data: {
-          status: 'synced',
-          progress: 100,
-          chunkCount: chunks.length,
-          tokenCount: totalTokens,
-        },
-        include: { namespace: true },
-      })
-
-      created.push(mapDoc(updated))
     }
 
-    return NextResponse.json({ seeded: created.length, documents: created })
+    return NextResponse.json({ seeded: results.length, documents: results })
   } catch (e) {
     console.error('[POST /api/seed]', e)
     return NextResponse.json(

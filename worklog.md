@@ -460,3 +460,39 @@ Stage Summary:
 - Backend FastAPI image router + Next.js API routes mirror same contract
 - docker-compose extended with /data/pic volume; PIC_DIR env wired
 - All 4 RAG workflows preserved; lint clean; browser-verified
+
+---
+Task ID: DEPLOY-1
+Agent: main
+Task: Standalone deployment package for Windows Docker Desktop — remove Prisma, proxy architecture, Dockerfile.standalone, README
+
+Work Log:
+- Audited all 20 API route files that imported {db} from @/lib/db or from @/lib/rag
+- Created src/lib/proxy.ts: server-side proxy helper that forwards requests from Next.js API routes to FastAPI backend (http://api-server:8000). Handles JSON, SSE streaming, multipart upload, binary image serving. Strips hop-by-hop headers. Returns 502 with clear error if backend unreachable.
+- Rewrote ALL 20 API route files as thin proxies (removed all Prisma/rag imports):
+  * ingest/documents, ingest, ingest/[id]/preview, ingest/[id]/commit, ingest/[id]
+  * search, search/[id]
+  * chat/templates, chat, chat/stream
+  * settings/catalog, settings
+  * knowledge/namespaces, knowledge/stats
+  * health
+  * cart/tokens, cart/optimize
+  * images/upload, images/[filename]
+  * seed (calls backend /ingest for each sample doc)
+- Deleted src/lib/db.ts (Prisma client), src/lib/rag/ (local RAG utils), prisma/ directory (schema)
+- Updated src/lib/api/client.ts: API_BASE_URL='' (browser calls relative /api/* paths, proxied to backend)
+- Created Dockerfile.standalone (root): multi-stage Node 20 build (deps→build→runner), standalone output, non-root user, minimal image
+- Updated docker-compose.yml: frontend build context='.' (root), dockerfile='Dockerfile.standalone'; BACKEND_URL=http://api-server:8000 + NEXT_PUBLIC_API_BASE_URL= env; named volumes (personalos_db_data, redis_data, markdown_data, pic_data) for Windows compatibility; healthchecks on db+redis; restart:always on all services
+- Created .env.example with exact connection strings per spec
+- Created /download/README.md: comprehensive English documentation with project history (v1→v6), architecture diagram, quick-start for Windows Docker Desktop, API reference, troubleshooting, env var reference
+- Lint: 0 errors, 0 warnings
+- Agent Browser verification: all 8 pages render (200); API proxy returns 502 with clear "Backend unreachable" error (expected in dev without Docker); MD editor still renders with Fulltext/Render toggle + Upload image; no console errors
+
+Stage Summary:
+- COMPLETE Prisma removal: zero @prisma/client imports, zero @/lib/db imports, zero @/lib/rag imports
+- All 20 API routes are thin proxies to FastAPI backend via src/lib/proxy.ts
+- Single-origin proxy pattern: browser → /api/* (relative) → Next.js route → http://api-server:8000 (Docker internal)
+- Dockerfile.standalone ready for Windows Docker Desktop (multi-stage, standalone output, non-root)
+- docker-compose.yml: 5 services with healthchecks + named volumes + restart:always
+- /download/README.md: full project history + quick-start + architecture + API reference
+- docker compose up -d --build ready to deploy
