@@ -4,14 +4,14 @@
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { CartItem, SearchHit, CartSummary } from '@/types/rag'
+import type { CartItem, ChunkHit, ParentResult, CartSummary } from '@/types/rag'
 import { uid } from '@/lib/api/client'
 
 interface CartState {
   items: CartItem[]
   contextLimit: number
 
-  addFromHit: (hit: SearchHit) => void
+  addFromChunk: (chunk: ChunkHit, parent: ParentResult) => void
   remove: (cartItemId: string) => void
   toggleSelect: (cartItemId: string) => void
   clear: () => void
@@ -30,19 +30,19 @@ export const useCartStore = create<CartState>()(
       items: [],
       contextLimit: 128000,
 
-      addFromHit: (hit) =>
+      addFromChunk: (chunk, parent) =>
         set((state) => {
-          if (state.items.some((i) => i.id === hit.id)) return state
+          if (state.items.some((i) => i.id === chunk.id)) return state
           const item: CartItem = {
-            id: hit.id,
+            id: chunk.id,
             cartItemId: uid('cart'),
-            documentId: hit.documentId,
-            documentTitle: hit.documentTitle,
-            chunkIndex: hit.chunkIndex,
-            content: hit.content,
-            tokenCount: estimateTokens(hit.content),
-            sourceType: hit.sourceType,
-            tags: hit.tags,
+            documentId: parent.documentId,
+            documentTitle: parent.documentTitle,
+            chunkIndex: chunk.chunkIndex,
+            content: chunk.content,
+            tokenCount: chunk.tokenCount || estimateTokens(chunk.content),
+            sourceType: parent.sourceType,
+            tags: parent.tags,
             addedAt: new Date().toISOString(),
             selected: true,
           }

@@ -25,18 +25,13 @@ export interface KnowledgeDocument {
   sourceType: SourceType;
   sourceUri: string;
   status: IngestStatus;
-  /** Total chunk count after processing */
   chunkCount: number;
-  /** Total token estimate */
   tokenCount: number;
-  /** Markdown content stored in object storage */
   markdownUri?: string;
-  /** pgvector collection / namespace */
   namespace: string;
   tags: string[];
   createdAt: string;
   updatedAt: string;
-  /** Detailed progress 0–100 */
   progress: number;
   errorMessage?: string;
 }
@@ -46,9 +41,6 @@ export interface ChunkPreview {
   index: number;
   content: string;
   tokenCount: number;
-  /** Embedding model used */
-  embeddingModel: string;
-  /** Overlap with previous chunk */
   overlap: number;
 }
 
@@ -56,7 +48,6 @@ export interface ChunkingConfig {
   strategy: 'fixed' | 'recursive' | 'semantic' | 'markdown';
   chunkSize: number;
   chunkOverlap: number;
-  separators: string[];
 }
 
 export interface IngestRequest {
@@ -66,18 +57,11 @@ export interface IngestRequest {
   namespace: string;
   tags: string[];
   chunking: ChunkingConfig;
-}
-
-export interface SyncStatusEvent {
-  documentId: string;
-  status: IngestStatus;
-  progress: number;
-  message: string;
-  timestamp: string;
+  content?: string;
 }
 
 /* ------------------------------------------------------------------ */
-/* Hybrid Search (Workflow 2)                                         */
+/* Hybrid Search (Workflow 2) — parent-document reranked results      */
 /* ------------------------------------------------------------------ */
 
 export type SearchMode = 'hybrid' | 'vector' | 'keyword' | 'semantic';
@@ -86,14 +70,16 @@ export interface SearchQuery {
   query: string;
   mode: SearchMode;
   namespace: string;
-  /** Top-K results */
+  /** chunks fetched before parent rerank */
   topK: number;
-  /** Weight for vector similarity (0–1), keyword = 1 - alpha */
+  /** vector weight (0–1); keyword = 1 - alpha */
   alpha: number;
-  /** Metadata filters */
+  /** metadata filters */
   filters?: SearchFilter;
-  /** Reranking enabled */
+  /** cross-encoder rerank of parents */
   rerank?: boolean;
+  /** parents returned after rerank */
+  rerankTop?: number;
 }
 
 export interface SearchFilter {
@@ -103,38 +89,47 @@ export interface SearchFilter {
   dateTo?: string;
 }
 
-export interface SearchHit {
+/** A single chunk hit with full score breakdown. */
+export interface ChunkHit {
   id: string;
-  documentId: string;
-  documentTitle: string;
   chunkIndex: number;
   content: string;
-  /** Markdown rendered content */
   markdown: string;
-  /** Vector similarity score 0–1 */
+  tokenCount: number;
   vectorScore: number;
-  /** BM25 / keyword score */
   keywordScore: number;
-  /** Combined hybrid score */
   hybridScore: number;
+}
+
+/**
+ * A parent Markdown document, reranked by aggregated chunk scores.
+ * Each result carries its top contributing chunks.
+ */
+export interface ParentResult {
+  documentId: string;
+  documentTitle: string;
   sourceType: SourceType;
-  tags: string[];
   namespace: string;
-  metadata: Record<string, unknown>;
+  tags: string[];
+  /** aggregated weighted score */
+  parentScore: number;
+  /** how many top chunks belonged to this parent */
+  contributingChunks: number;
+  /** best chunks for this parent (max 3) */
+  topChunks: ChunkHit[];
 }
 
 export interface SearchResponse {
-  hits: SearchHit[];
-  total: number;
-  tookMs: number;
   query: string;
   mode: SearchMode;
+  total: number;
+  tookMs: number;
+  results: ParentResult[];
 }
 
 export interface EditChunkRequest {
   id: string;
   content: string;
-  /** Whether to re-embed after edit */
   reembed: boolean;
 }
 
@@ -151,7 +146,6 @@ export interface EditChunkResponse {
 
 export interface CartItem {
   id: string;
-  /** Local unique id for cart management */
   cartItemId: string;
   documentId: string;
   documentTitle: string;
@@ -161,7 +155,6 @@ export interface CartItem {
   sourceType: SourceType;
   tags: string[];
   addedAt: string;
-  /** Whether selected for prompt assembly */
   selected: boolean;
 }
 
@@ -170,7 +163,6 @@ export interface CartSummary {
   selectedCount: number;
   totalTokens: number;
   selectedTokens: number;
-  /** Context window limit from backend config */
   contextLimit: number;
 }
 
@@ -204,12 +196,9 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
-  /** Cart item ids attached as context */
   contextItemIds?: string[];
   timestamp: string;
-  /** Token usage for this message */
   tokenCount?: number;
-  /** Model that produced the message */
   model?: string;
 }
 
@@ -217,13 +206,9 @@ export interface PromptTemplate {
   id: string;
   name: string;
   description: string;
-  /** System prompt template with {{variables}} */
   systemPrompt: string;
-  /** User prompt template */
   userPrompt: string;
-  /** Declared variables */
   variables: PromptVariable[];
-  /** Built-in or custom */
   builtin: boolean;
 }
 
@@ -241,18 +226,26 @@ export interface ChatParameters {
   temperature: number;
   maxTokens: number;
   topP: number;
-  /** Whether to stream the response */
   stream: boolean;
-  /** Whether to attach memory cart context */
   useContext: boolean;
 }
 
+/** Context item payload sent to the backend (from the cart store). */
+export interface ContextItemPayload {
+  id: string;
+  documentTitle: string;
+  chunkIndex: number;
+  content: string;
+  tokenCount: number;
+}
+
 export interface ChatRequest {
-  messages: ChatMessage[];
-  templateId: string;
+  messages: { role: ChatRole; content: string; contextItemIds?: string[] }[];
+  templateId?: string;
   variables: Record<string, string>;
   parameters: ChatParameters;
   contextItemIds: string[];
+  contextItems: ContextItemPayload[];
 }
 
 export interface ChatStreamChunk {
@@ -260,6 +253,32 @@ export interface ChatStreamChunk {
   messageId: string;
   done: boolean;
   tokenCount?: number;
+  error?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Settings (model selection)                                         */
+/* ------------------------------------------------------------------ */
+
+export interface ModelSettings {
+  chatModel: string;
+  embeddingModel: string;
+  rerankerModel: string;
+  chatTemperature: number;
+  chatMaxTokens: number;
+  contextLimit: number;
+}
+
+export interface ModelOption {
+  value: string;
+  label: string;
+  description: string;
+}
+
+export interface ModelCatalog {
+  chatModels: ModelOption[];
+  embeddingModels: ModelOption[];
+  rerankerModels: ModelOption[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -282,8 +301,25 @@ export interface KnowledgeStats {
   totalChunks: number;
   totalTokens: number;
   namespaces: number;
-  recentIngests: KnowledgeDocument[];
   topTags: { tag: string; count: number }[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Health                                                              */
+/* ------------------------------------------------------------------ */
+
+export type HealthStatus = 'ok' | 'degraded' | 'down';
+
+export interface HealthComponent {
+  name: string;
+  status: HealthStatus;
+  latencyMs?: number;
+  detail?: string;
+}
+
+export interface HealthReport {
+  status: HealthStatus;
+  components: HealthComponent[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -294,11 +330,4 @@ export interface ApiResponse<T> {
   data: T;
   success: boolean;
   error?: string;
-}
-
-export interface Paginated<T> {
-  items: T[];
-  total: number;
-  page: number;
-  pageSize: number;
 }

@@ -1,24 +1,18 @@
 /**
  * Base API client for the FastAPI + LangChain backend.
  *
- * NOTE: This is a placeholder client layer. All endpoints are pre-wired
- * with strong typing but do not perform real network calls yet — they
- * return mock data so the UI is fully interactive during template phase.
+ * In production: NEXT_PUBLIC_API_BASE_URL points to the FastAPI service
+ * (e.g. http://api-server:8000 or http://localhost:8000).
  *
- * When the backend is ready, replace the mock implementations with real
- * `fetch` calls to the configured base URL. The function signatures and
- * return types already match the expected backend contracts.
+ * In the sandbox/preview: NEXT_PUBLIC_API_BASE_URL defaults to '' (same
+ * origin), so calls hit the Next.js API routes under /app/api/* which
+ * mirror the backend contract using Prisma + SQLite + JS cosine sim.
+ *
+ * The contract is identical — only the implementation differs.
  */
 
-import type {
-  ApiResponse,
-} from '@/types/rag'
-
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api'
-
-/** Default backend port hint used by the gateway transform. */
-export const BACKEND_PORT = process.env.NEXT_PUBLIC_BACKEND_PORT ?? '8000'
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? ''
 
 export class ApiError extends Error {
   status: number
@@ -35,49 +29,46 @@ interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
-  /** Simulated latency for mocks (ms) */
-  mockDelay?: number
 }
 
-/**
- * Generic request wrapper. Currently returns mock data via the supplied
- * `mockResolver`. Swap to a real fetch implementation when the backend
- * is connected.
- */
+/** Generic JSON request against the configured API base URL. */
 export async function request<T>(
-  _path: string,
+  path: string,
   options: RequestOptions = {},
-  mockResolver?: () => T | Promise<T>,
 ): Promise<T> {
-  // ----- Mock path (template phase) -----
-  if (mockResolver) {
-    const delay = options.mockDelay ?? 350
-    await new Promise((r) => setTimeout(r, delay))
-    const data = await mockResolver()
-    return data
+  const url = `${API_BASE_URL}${path}`
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: options.method ?? 'GET',
+      headers: options.body !== undefined ? { 'Content-Type': 'application/json' } : {},
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: options.signal,
+    })
+  } catch (e) {
+    throw new ApiError(
+      e instanceof Error ? e.message : 'Network error',
+      0,
+      e,
+    )
   }
-
-  // ----- Real path (ready for backend) -----
-  const url = `${API_BASE_URL}${_path}`
-  const res = await fetch(url, {
-    method: options.method ?? 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: options.signal,
-  })
 
   if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(text || res.statusText, res.status)
+    let detail: unknown
+    try {
+      detail = await res.json()
+    } catch {
+      detail = await res.text().catch(() => res.statusText)
+    }
+    const msg =
+      (detail && typeof detail === 'object' && 'detail' in detail
+        ? String((detail as { detail: unknown }).detail)
+        : res.statusText) || `HTTP ${res.status}`
+    throw new ApiError(msg, res.status, detail)
   }
 
-  const json = (await res.json()) as ApiResponse<T>
-  if (!json.success) {
-    throw new ApiError(json.error ?? 'Unknown error', res.status)
-  }
-  return json.data
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
 }
 
 /** Tiny id generator (client-safe). */

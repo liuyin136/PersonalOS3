@@ -12,6 +12,7 @@ import {
   Trophy,
   Search as SearchIcon,
   Check,
+  Layers,
 } from 'lucide-react'
 import {
   Card,
@@ -24,17 +25,17 @@ import { SourceTypeBadge } from '@/components/common/source-type-badge'
 import { useCartStore } from '@/lib/store/cart-store'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { SearchHit } from '@/types/rag'
+import type { ChunkHit, ParentResult } from '@/types/rag'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
 
 export interface SearchResultsProps {
-  hits: SearchHit[]
+  results: ParentResult[]
   isLoading: boolean
   hasSearched: boolean
-  onEdit: (hit: SearchHit) => void
+  onEdit: (chunk: ChunkHit, parent: ParentResult) => void
 }
 
 /* ------------------------------------------------------------------ */
@@ -42,29 +43,29 @@ export interface SearchResultsProps {
 /* ------------------------------------------------------------------ */
 
 export function SearchResults({
-  hits,
+  results,
   isLoading,
   hasSearched,
   onEdit,
 }: SearchResultsProps) {
-  const addFromHit = useCartStore((s) => s.addFromHit)
+  const addFromChunk = useCartStore((s) => s.addFromChunk)
   const cartItems = useCartStore((s) => s.items)
 
-  const isAdded = (hitId: string) =>
-    cartItems.some((i) => i.id === hitId)
+  const isAdded = (chunkId: string) =>
+    cartItems.some((i) => i.id === chunkId)
 
-  const handleAddToCart = (hit: SearchHit) => {
-    addFromHit(hit)
+  const handleAddToCart = (chunk: ChunkHit, parent: ParentResult) => {
+    addFromChunk(chunk, parent)
     toast.success('Added to Memory Cart', {
-      description: `${hit.documentTitle} · chunk ${hit.chunkIndex}`,
+      description: `${parent.documentTitle} · chunk ${chunk.chunkIndex}`,
     })
   }
 
-  const handleCopy = async (hit: SearchHit) => {
+  const handleCopy = async (chunk: ChunkHit, parent: ParentResult) => {
     try {
-      await navigator.clipboard.writeText(hit.content)
+      await navigator.clipboard.writeText(chunk.content)
       toast.success('Copied to clipboard', {
-        description: `${hit.documentTitle} · chunk ${hit.chunkIndex}`,
+        description: `${parent.documentTitle} · chunk ${chunk.chunkIndex}`,
       })
     } catch {
       toast.error('Failed to copy', {
@@ -112,7 +113,7 @@ export function SearchResults({
   }
 
   /* ---------------- Empty: no results ---------------- */
-  if (hits.length === 0) {
+  if (results.length === 0) {
     return (
       <EmptyState
         icon={SearchX}
@@ -124,20 +125,19 @@ export function SearchResults({
 
   /* ---------------- Results ---------------- */
   return (
-    <div className="space-y-4">
-      {hits.map((hit, idx) => {
-        const added = isAdded(hit.id)
-        const isTop = idx === 0
+    <div className="space-y-5">
+      {results.map((parent, pIdx) => {
+        const isTop = pIdx === 0
         return (
           <Card
-            key={hit.id}
+            key={parent.documentId}
             className={cn(
               'gap-4 p-5 transition-all hover:shadow-md',
               isTop &&
                 'border-primary/40 bg-primary/[0.03] ring-1 ring-primary/20',
             )}
           >
-            {/* Header: rank + title + meta + score badges */}
+            {/* Parent header: rank + title + meta + score badges */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex items-start gap-2.5">
                 <div
@@ -147,48 +147,47 @@ export function SearchResults({
                       ? 'gradient-green text-primary-foreground'
                       : 'bg-secondary text-secondary-foreground',
                   )}
-                  aria-label={`Rank ${idx + 1}`}
+                  aria-label={`Rank ${pIdx + 1}`}
                 >
                   {isTop ? (
                     <Trophy className="h-3.5 w-3.5" />
                   ) : (
-                    idx + 1
+                    pIdx + 1
                   )}
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-sm font-semibold leading-tight">
-                    {hit.documentTitle}
+                    {parent.documentTitle}
                   </h3>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
-                      <Hash className="h-3 w-3" />
-                      chunk {hit.chunkIndex}
+                      <FileText className="h-3 w-3" />
+                      {parent.namespace}
                     </span>
                     <span aria-hidden>·</span>
                     <span className="inline-flex items-center gap-1">
-                      <FileText className="h-3 w-3" />
-                      {hit.namespace}
+                      <Layers className="h-3 w-3" />
+                      {parent.contributingChunks} contributing chunk
+                      {parent.contributingChunks === 1 ? '' : 's'}
                     </span>
                   </div>
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
-                <SourceTypeBadge type={hit.sourceType} />
+                <SourceTypeBadge type={parent.sourceType} />
                 <ScoreBadge
-                  label="hybrid"
-                  value={hit.hybridScore}
+                  label="parent"
+                  value={parent.parentScore}
                   prominent
                 />
-                <ScoreBadge label="vec" value={hit.vectorScore} />
-                <ScoreBadge label="kw" value={hit.keywordScore} />
               </div>
             </div>
 
             {/* Tags */}
-            {hit.tags.length > 0 && (
+            {parent.tags.length > 0 && (
               <div className="flex flex-wrap gap-1">
-                {hit.tags.map((t) => (
+                {parent.tags.map((t) => (
                   <Badge
                     key={t}
                     variant="secondary"
@@ -200,52 +199,89 @@ export function SearchResults({
               </div>
             )}
 
-            {/* Content as Markdown */}
-            <CardContent className="prose-rag max-w-none px-0 text-sm">
-              <ReactMarkdown>
-                {hit.markdown || hit.content}
-              </ReactMarkdown>
-            </CardContent>
+            {/* Top contributing chunks */}
+            <div className="space-y-3">
+              {parent.topChunks.map((chunk) => {
+                const added = isAdded(chunk.id)
+                return (
+                  <div
+                    key={chunk.id}
+                    className="rounded-lg border border-border bg-card/60 p-3"
+                  >
+                    {/* Chunk header */}
+                    <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                      <Badge
+                        variant="outline"
+                        className="gap-1 font-mono text-[10px]"
+                      >
+                        <Hash className="h-3 w-3" />
+                        chunk {chunk.chunkIndex}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className="bg-primary/10 text-[10px] font-semibold text-primary"
+                      >
+                        {chunk.tokenCount.toLocaleString()} tok
+                      </Badge>
+                      <ScoreBadge
+                        label="hybrid"
+                        value={chunk.hybridScore}
+                        prominent
+                      />
+                      <ScoreBadge label="vec" value={chunk.vectorScore} />
+                      <ScoreBadge label="kw" value={chunk.keywordScore} />
+                    </div>
 
-            {/* Actions */}
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Button
-                size="sm"
-                variant={added ? 'secondary' : 'default'}
-                onClick={() => handleAddToCart(hit)}
-                disabled={added}
-                className={cn(
-                  !added && 'gradient-green text-primary-foreground',
-                )}
-              >
-                {added ? (
-                  <>
-                    <Check className="h-3.5 w-3.5" />
-                    In Cart
-                  </>
-                ) : (
-                  <>
-                    <ShoppingCart className="h-3.5 w-3.5" />
-                    Add to Cart
-                  </>
-                )}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onEdit(hit)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Edit
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => handleCopy(hit)}
-              >
-                <Copy className="h-3.5 w-3.5" />
-                Copy
-              </Button>
+                    {/* Chunk content as Markdown */}
+                    <CardContent className="prose-rag max-w-none px-0 py-1 text-sm">
+                      <ReactMarkdown>
+                        {chunk.markdown || chunk.content}
+                      </ReactMarkdown>
+                    </CardContent>
+
+                    {/* Per-chunk actions */}
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant={added ? 'secondary' : 'default'}
+                        onClick={() => handleAddToCart(chunk, parent)}
+                        disabled={added}
+                        className={cn(
+                          !added && 'gradient-green text-primary-foreground',
+                        )}
+                      >
+                        {added ? (
+                          <>
+                            <Check className="h-3.5 w-3.5" />
+                            In Cart
+                          </>
+                        ) : (
+                          <>
+                            <ShoppingCart className="h-3.5 w-3.5" />
+                            Add to Cart
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onEdit(chunk, parent)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleCopy(chunk, parent)}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        Copy
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </Card>
         )

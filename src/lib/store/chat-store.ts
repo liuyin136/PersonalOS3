@@ -26,7 +26,7 @@ interface ChatState {
 }
 
 const defaultParameters: ChatParameters = {
-  model: 'gpt-4o',
+  model: 'qwen2.5-7b-instruct',
   temperature: 0.3,
   maxTokens: 2048,
   topP: 1,

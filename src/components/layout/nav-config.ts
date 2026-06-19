@@ -5,6 +5,8 @@ import {
   ShoppingCart,
   MessageSquare,
   Library,
+  Activity,
+  Settings,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -56,5 +58,17 @@ export const navItems: NavItem[] = [
     label: 'Knowledge',
     icon: Library,
     description: 'Namespaces & documents',
+  },
+  {
+    href: '/health',
+    label: 'Health',
+    icon: Activity,
+    description: 'System & dependency checks',
+  },
+  {
+    href: '/settings',
+    label: 'Settings',
+    icon: Settings,
+    description: 'Model selection & params',
   },
 ]

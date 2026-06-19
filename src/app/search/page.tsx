@@ -40,7 +40,12 @@ import {
   ToggleGroupItem,
 } from '@/components/ui/toggle-group'
 import { searchApi } from '@/lib/api'
-import type { SearchHit, SearchMode } from '@/types/rag'
+import type {
+  SearchMode,
+  SearchResponse,
+  ChunkHit,
+  ParentResult,
+} from '@/types/rag'
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
@@ -48,9 +53,10 @@ import type { SearchHit, SearchMode } from '@/types/rag'
 
 const TIPS = [
   'Hybrid mode blends vector + BM25 keyword scores using the α slider.',
+  'Results are aggregated by parent Markdown document and reranked.',
   'Lower α favours exact keyword matches; higher α favours semantic similarity.',
   'Enable rerank to apply a cross-encoder model for precision ordering.',
-  'Top-K controls how many chunks to retrieve from pgvector.',
+  'Top-K controls chunk retrieval from pgvector; rerankTop caps parents returned.',
   'Edit a chunk to refine content — re-embed to update its vector.',
 ]
 
@@ -65,19 +71,19 @@ export default function SearchPage() {
   const [query, setQuery] = React.useState('')
   const [mode, setMode] = React.useState<SearchMode>('hybrid')
   const [alpha, setAlpha] = React.useState(0.5)
-  const [topK, setTopK] = React.useState(6)
+  const [topK, setTopK] = React.useState(12)
   const [rerank, setRerank] = React.useState(true)
+  const [rerankTop, setRerankTop] = React.useState(10)
   const [namespace, setNamespace] = React.useState('engineering')
 
-  // ---- Results state ----
-  const [hits, setHits] = React.useState<SearchHit[]>([])
-  const [total, setTotal] = React.useState<number | undefined>(undefined)
-  const [tookMs, setTookMs] = React.useState<number | undefined>(undefined)
+  // ---- Results state (parent-reranked) ----
+  const [response, setResponse] = React.useState<SearchResponse | null>(null)
   const [isSearching, setIsSearching] = React.useState(false)
   const [hasSearched, setHasSearched] = React.useState(false)
 
   // ---- Edit modal state ----
-  const [editingHit, setEditingHit] = React.useState<SearchHit | null>(null)
+  const [editingChunk, setEditingChunk] = React.useState<ChunkHit | null>(null)
+  const [editingParent, setEditingParent] = React.useState<ParentResult | null>(null)
   const [editOpen, setEditOpen] = React.useState(false)
 
   // ---- Recent searches (in-memory) ----
@@ -101,10 +107,9 @@ export default function SearchPage() {
           topK,
           alpha,
           rerank,
+          rerankTop,
         })
-        setHits(res.hits)
-        setTotal(res.total)
-        setTookMs(res.tookMs)
+        setResponse(res)
         setHasSearched(true)
         setRecent((prev) => {
           const next = [q, ...prev.filter((r) => r !== q)].slice(0, 5)
@@ -112,11 +117,13 @@ export default function SearchPage() {
         })
       } catch (err) {
         console.error('Search failed', err)
+        setResponse({ query: q, mode, total: 0, tookMs: 0, results: [] })
+        setHasSearched(true)
       } finally {
         setIsSearching(false)
       }
     },
-    [query, mode, namespace, topK, alpha, rerank],
+    [query, mode, namespace, topK, alpha, rerank, rerankTop],
   )
 
   // Run a default search on first mount so the page isn't empty.
@@ -127,21 +134,31 @@ export default function SearchPage() {
     // for this initial call thanks to its override-query argument.
   }, [])
 
-  const handleEdit = (hit: SearchHit) => {
-    setEditingHit(hit)
+  const handleEdit = (chunk: ChunkHit, parent: ParentResult) => {
+    setEditingChunk(chunk)
+    setEditingParent(parent)
     setEditOpen(true)
   }
 
   const handleSaved = (
-    id: string,
-    content: string,
+    chunkId: string,
+    newContent: string,
     _reembedded: boolean,
   ) => {
-    setHits((prev) =>
-      prev.map((h) =>
-        h.id === id ? { ...h, content, markdown: content } : h,
-      ),
-    )
+    setResponse((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        results: prev.results.map((p) => ({
+          ...p,
+          topChunks: p.topChunks.map((c) =>
+            c.id === chunkId
+              ? { ...c, content: newContent, markdown: newContent }
+              : c,
+          ),
+        })),
+      }
+    })
   }
 
   const modeHint = MODE_OPTIONS.find((m) => m.value === mode)?.hint
@@ -151,7 +168,7 @@ export default function SearchPage() {
       <PageHeader
         icon={Search}
         title="Hybrid Search & Retrieval"
-        description="Workflow 2 — Retrieve knowledge chunks via hybrid vector + keyword search. Read, edit, and re-embed chunks in real time."
+        description="Workflow 2 — Retrieve chunks via hybrid vector + keyword search, then aggregate by parent document and rerank. Read, edit, and re-embed chunks in real time."
       />
 
       {/* ---------------------------------------------------------- */}
@@ -172,8 +189,8 @@ export default function SearchPage() {
         setNamespace={setNamespace}
         onSearch={runSearch}
         isSearching={isSearching}
-        totalResults={total}
-        tookMs={tookMs}
+        totalResults={response?.total}
+        tookMs={response?.tookMs}
       />
 
       {/* ---------------------------------------------------------- */}
@@ -183,7 +200,7 @@ export default function SearchPage() {
         {/* Main results list */}
         <div className="lg:col-span-2">
           <SearchResults
-            hits={hits}
+            results={response?.results ?? []}
             isLoading={isSearching}
             hasSearched={hasSearched}
             onEdit={handleEdit}
@@ -270,11 +287,11 @@ export default function SearchPage() {
 
                 <Separator />
 
-                {/* Top-K + Rerank */}
+                {/* Top-K + Rerank + RerankTop */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label className="text-xs font-medium text-muted-foreground">
-                      Top-K
+                      Top-K (chunks)
                     </Label>
                     <Select
                       value={String(topK)}
@@ -315,6 +332,34 @@ export default function SearchPage() {
                         {rerank ? 'On' : 'Off'}
                       </Label>
                     </div>
+                  </div>
+                </div>
+
+                {/* Rerank Top — parents to return */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      Results to return (parents)
+                    </Label>
+                    <Badge
+                      variant="secondary"
+                      className="bg-primary/10 text-[10px] text-primary"
+                    >
+                      {rerankTop}
+                    </Badge>
+                  </div>
+                  <Slider
+                    value={[rerankTop]}
+                    min={1}
+                    max={20}
+                    step={1}
+                    onValueChange={(v) => setRerankTop(v[0])}
+                    disabled={!rerank}
+                    aria-label="Rerank top parents"
+                  />
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>1</span>
+                    <span>20</span>
                   </div>
                 </div>
 
@@ -407,7 +452,8 @@ export default function SearchPage() {
       {/* Real-time edit modal                                        */}
       {/* ---------------------------------------------------------- */}
       <EditModal
-        hit={editingHit}
+        chunk={editingChunk}
+        parent={editingParent}
         open={editOpen}
         onOpenChange={setEditOpen}
         onSaved={handleSaved}

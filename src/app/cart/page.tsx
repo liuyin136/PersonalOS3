@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { ShoppingCart, Search, Trash2, CheckSquare, Square, FlaskConical } from 'lucide-react'
+import { ShoppingCart, Search, Trash2, CheckSquare, Square } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { CartItemRow } from '@/components/cart/cart-item-row'
 import { TokenCounter } from '@/components/cart/token-counter'
@@ -17,60 +17,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useCartStore } from '@/lib/store/cart-store'
-import { uid } from '@/lib/api/client'
 import { cn } from '@/lib/utils'
-import type { SearchHit } from '@/types/rag'
-
-/** Demo items used to preview the populated cart experience. */
-function buildSampleHits(): SearchHit[] {
-  return [
-    {
-      id: uid('hit'),
-      documentId: 'doc_rag-overview',
-      documentTitle: 'Retrieval-Augmented Generation: An Overview',
-      chunkIndex: 0,
-      content:
-        '# RAG Overview\n\nRetrieval-Augmented Generation (RAG) combines a **retriever** with a **generator**. The retriever surfaces relevant passages from a vector store, and the generator conditions its answer on those passages.\n\n- *Vector retrieval* uses pgvector + cosine similarity.\n- *Keyword retrieval* uses BM25 over a tokenized inverted index.\n- *Hybrid retrieval* blends the two with an alpha weight.\n\n> A well-tuned RAG system surfaces the right context — and only the right context.',
-      vectorScore: 0.92,
-      keywordScore: 0.78,
-      hybridScore: 0.87,
-      sourceType: 'markdown',
-      tags: ['rag', 'architecture', 'retrieval'],
-      namespace: 'core-concepts',
-      metadata: {},
-    },
-    {
-      id: uid('hit'),
-      documentId: 'doc_chunking-strategies',
-      documentTitle: 'Chunking Strategies for Long Documents',
-      chunkIndex: 3,
-      content:
-        '## Chunking Strategies\n\nChoosing the right chunk size directly affects retrieval quality.\n\n| Strategy | Pros | Cons |\n| --- | --- | --- |\n| Fixed | Simple, predictable | Can split mid-sentence |\n| Recursive | Respects structure | Slower |\n| Semantic | Coherent meaning | Model-dependent |\n\n**Recommendation:** start with `recursive` at 512 tokens and 64 overlap, then tune based on recall metrics.',
-      vectorScore: 0.88,
-      keywordScore: 0.71,
-      hybridScore: 0.82,
-      sourceType: 'pdf',
-      tags: ['chunking', 'optimization', 'tokens'],
-      namespace: 'engineering',
-      metadata: {},
-    },
-    {
-      id: uid('hit'),
-      documentId: 'doc_prompt-engineering',
-      documentTitle: 'Prompt Engineering for Structured Output',
-      chunkIndex: 1,
-      content:
-        '### Structured Prompting\n\nWhen asking an LLM for structured output, declare the schema explicitly in the system prompt and constrain the model with `temperature: 0`.\n\n```json\n{\n  "answer": "string",\n  "citations": ["string"],\n  "confidence": "number"\n}\n```\n\nAlways validate the response with a schema parser before surfacing it to the user.',
-      vectorScore: 0.84,
-      keywordScore: 0.69,
-      hybridScore: 0.78,
-      sourceType: 'docx',
-      tags: ['prompting', 'llm', 'schema'],
-      namespace: 'engineering',
-      metadata: {},
-    },
-  ]
-}
 
 export default function MemoryCartPage() {
   const router = useRouter()
@@ -79,7 +26,6 @@ export default function MemoryCartPage() {
   const toggleSelect = useCartStore((s) => s.toggleSelect)
   const clear = useCartStore((s) => s.clear)
   const clearSelected = useCartStore((s) => s.clearSelected)
-  const addFromHit = useCartStore((s) => s.addFromHit)
   const getSummary = useCartStore((s) => s.getSummary)
 
   // Subscribe to both `items` and `contextLimit` so the summary stays reactive
@@ -109,10 +55,6 @@ export default function MemoryCartPage() {
     clear()
   }
 
-  const handleLoadSample = () => {
-    buildSampleHits().forEach((h) => addFromHit(h))
-  }
-
   if (items.length === 0) {
     return (
       <div className="flex min-h-[60vh] flex-col">
@@ -139,15 +81,6 @@ export default function MemoryCartPage() {
             >
               <Search className="h-4 w-4" />
               Go to Search to add knowledge
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLoadSample}
-              className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <FlaskConical className="h-3.5 w-3.5" />
-              Or load sample items to preview
             </Button>
           </CardContent>
         </Card>

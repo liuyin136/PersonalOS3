@@ -1,6 +1,6 @@
 /**
  * Chat API — Workflow 4: Template-based Structured Chat Flow
- * Endpoints: /api/chat, /api/chat/templates
+ * Endpoints: /chat, /chat/templates, /chat/stream (SSE)
  */
 import { request, uid } from './client'
 import type {
@@ -10,7 +10,7 @@ import type {
   ChatStreamChunk,
 } from '@/types/rag'
 
-/** Built-in prompt templates (also serve as mock backend response). */
+/** Built-in templates (fallback if backend is unreachable). */
 export const builtinTemplates: PromptTemplate[] = [
   {
     id: 'tpl_rag_qa',
@@ -62,59 +62,94 @@ export const builtinTemplates: PromptTemplate[] = [
   },
 ]
 
+function mapTemplate(t: Record<string, unknown>): PromptTemplate {
+  return {
+    id: String(t.id),
+    name: String(t.name),
+    description: String(t.description ?? ''),
+    systemPrompt: String(t.system_prompt ?? t.systemPrompt ?? ''),
+    userPrompt: String(t.user_prompt ?? t.userPrompt ?? ''),
+    variables: ((t.variables as Record<string, unknown>[]) ?? []).map((v) => ({
+      key: String(v.key),
+      label: String(v.label),
+      type: (v.type as 'text' | 'number' | 'select' | 'boolean') ?? 'text',
+      defaultValue: v.default_value != null ? String(v.default_value) : v.defaultValue != null ? String(v.defaultValue) : undefined,
+      options: v.options as string[] | undefined,
+      required: Boolean(v.required),
+    })),
+    builtin: Boolean(t.builtin ?? true),
+  }
+}
+
 export const chatApi = {
   /** List available prompt templates. */
   async listTemplates(): Promise<PromptTemplate[]> {
-    return request<PromptTemplate[]>(
-      '/chat/templates',
-      { method: 'GET', mockDelay: 300 },
-      () => [...builtinTemplates],
-    )
+    try {
+      const data = await request<Record<string, unknown>[]>('/api/chat/templates')
+      const mapped = data.map(mapTemplate)
+      return mapped.length ? mapped : builtinTemplates
+    } catch {
+      return builtinTemplates
+    }
   },
 
   /** Send a structured chat request (non-streaming). */
   async sendChat(payload: ChatRequest): Promise<ChatMessage> {
-    return request<ChatMessage>(
-      '/chat',
-      { method: 'POST', body: payload, mockDelay: 1200 },
-      () => ({
-        id: uid('msg'),
-        role: 'assistant',
-        content:
-          'This is a **mock assistant response** generated from the structured prompt template.\n\n- Context items used: ' +
-          payload.contextItemIds.length +
-          '\n- Template: `' +
-          payload.templateId +
-          '`\n- Temperature: ' +
-          payload.parameters.temperature +
-          '\n\n```\nready for backend wiring\n```',
-        timestamp: new Date().toISOString(),
-        tokenCount: 128,
-        model: payload.parameters.model,
-      }),
-    )
+    const data = await request<Record<string, unknown>>('/api/chat', {
+      method: 'POST',
+      body: payload,
+    })
+    return {
+      id: String(data.id ?? uid('msg')),
+      role: 'assistant',
+      content: String(data.content ?? ''),
+      timestamp: String(data.timestamp ?? new Date().toISOString()),
+      tokenCount: data.token_count != null ? Number(data.token_count) : undefined,
+      model: data.model != null ? String(data.model) : undefined,
+    }
   },
 
-  /** Stream a chat response (mock generator). */
+  /** Stream a chat response via Server-Sent Events. */
   async *streamChat(payload: ChatRequest): AsyncGenerator<ChatStreamChunk> {
-    const messageId = uid('msg')
-    const tokens = [
-      'This ',
-      'is a ',
-      '**streamed** ',
-      'mock ',
-      'response ',
-      'assembled ',
-      'from ',
-      `template \`${payload.templateId}\`.`,
-      '\n\n- Context items: ' + payload.contextItemIds.length,
-      '\n- Model: ' + payload.parameters.model,
-      '\n\nReady for real backend wiring.',
-    ]
-    for (const t of tokens) {
-      await new Promise((r) => setTimeout(r, 90))
-      yield { delta: t, messageId, done: false }
+    const res = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok || !res.body) {
+      throw new Error(`stream failed: HTTP ${res.status}`)
     }
-    yield { delta: '', messageId, done: true, tokenCount: 96 }
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    const messageId = uid('msg')
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data:')) continue
+        const jsonStr = trimmed.slice(5).trim()
+        if (!jsonStr) continue
+        try {
+          const obj = JSON.parse(jsonStr) as Record<string, unknown>
+          if (obj.error) {
+            yield { delta: '', messageId, done: true, error: String(obj.error) }
+            return
+          }
+          yield {
+            delta: String(obj.delta ?? ''),
+            messageId: String(obj.messageId ?? messageId),
+            done: Boolean(obj.done),
+          }
+        } catch {
+          /* skip malformed line */
+        }
+      }
+    }
   },
 }

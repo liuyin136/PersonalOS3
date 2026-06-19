@@ -1,0 +1,29 @@
+# Web & Async Task
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+arq==0.26.0
+redis==5.2.1
+
+# Database & Vector (async)
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+pgvector==0.3.6
+
+# AI / ML — local models (no OpenAI/Claude dependency)
+langchain==0.3.14
+langchain-community==0.3.14
+langchain-huggingface==0.1.2
+sentence-transformers==3.3.1
+transformers==4.47.1
+torch==2.5.1
+tiktoken==0.8.0
+
+# HTTP client for OpenAI-compatible local LLM endpoints
+httpx==0.28.1
+
+# Config & validation
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# Utils
+python-multipart==0.0.20

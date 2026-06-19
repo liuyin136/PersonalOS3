@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  personalos-db:
+    image: pgvector/pgvector:pg16
+    container_name: personalos_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_DB: personalos
+    volumes:
+      - personalos_db_data:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d personalos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.standalone
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://api-server:8000
+    depends_on:
+      - api-server
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: always
+
+  api-server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql+asyncpg://postgres:mysecretpassword@personalos-db:5432/personalos
+      - MARKDOWN_DIR=/data/markdown
+      - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
+    volumes:
+      - ./data/markdown:/data/markdown
+    depends_on:
+      personalos-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    restart: always
+
+  ai-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: arq worker.WorkerSettings
+    tty: true
+    stdin_open: true
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql+asyncpg://postgres:mysecretpassword@personalos-db:5432/personalos
+      - MARKDOWN_DIR=/data/markdown
+    volumes:
+      - ./data/markdown:/data/markdown
+    depends_on:
+      personalos-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    restart: always
+
+volumes:
+  personalos_db_data:
+  redis_data:

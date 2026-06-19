@@ -18,17 +18,18 @@ import { Badge } from '@/components/ui/badge'
 import { SourceTypeBadge } from '@/components/common/source-type-badge'
 import { searchApi } from '@/lib/api'
 import { toast } from 'sonner'
-import type { SearchHit } from '@/types/rag'
+import type { ChunkHit, ParentResult } from '@/types/rag'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
 
 export interface EditModalProps {
-  hit: SearchHit | null
+  chunk: ChunkHit | null
+  parent: ParentResult | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSaved: (id: string, content: string, reembedded: boolean) => void
+  onSaved: (chunkId: string, newContent: string, reembedded: boolean) => void
 }
 
 /* ------------------------------------------------------------------ */
@@ -36,7 +37,8 @@ export interface EditModalProps {
 /* ------------------------------------------------------------------ */
 
 export function EditModal({
-  hit,
+  chunk,
+  parent,
   open,
   onOpenChange,
   onSaved,
@@ -45,20 +47,20 @@ export function EditModal({
   const [reembed, setReembed] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
 
-  // Reset content whenever a new hit is opened.
+  // Reset content whenever a new chunk is opened.
   React.useEffect(() => {
-    if (hit) {
-      setContent(hit.content)
+    if (chunk) {
+      setContent(chunk.content)
       setReembed(true)
     }
-  }, [hit])
+  }, [chunk])
 
-  // Avoid rendering anything until we actually have a hit.
-  if (!hit) return null
+  // Avoid rendering anything until we actually have a chunk.
+  if (!chunk) return null
 
   const charCount = content.length
   const tokenEstimate = Math.ceil(charCount / 3.8)
-  const dirty = content.trim().length > 0 && content !== hit.content
+  const dirty = content.trim().length > 0 && content !== chunk.content
 
   const handleSave = async () => {
     if (!dirty) {
@@ -68,7 +70,7 @@ export function EditModal({
     setSaving(true)
     try {
       const res = await searchApi.editChunk({
-        id: hit.id,
+        id: chunk.id,
         content,
         reembed,
       })
@@ -77,7 +79,7 @@ export function EditModal({
           ? 'Re-embedded into pgvector successfully.'
           : 'Saved without re-embedding.',
       })
-      onSaved(hit.id, content, res.reembedded)
+      onSaved(chunk.id, content, res.reembedded)
       onOpenChange(false)
     } catch (err) {
       toast.error('Failed to update chunk', {
@@ -103,13 +105,23 @@ export function EditModal({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Chunk meta */}
+        {/* Chunk meta — parent context + chunk index */}
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs">
-          <span className="font-medium">{hit.documentTitle}</span>
+          <span className="font-medium">
+            {parent?.documentTitle ?? 'Untitled document'}
+          </span>
           <Badge variant="outline" className="text-[10px]">
-            chunk {hit.chunkIndex}
+            chunk {chunk.chunkIndex}
           </Badge>
-          <SourceTypeBadge type={hit.sourceType} />
+          {parent && <SourceTypeBadge type={parent.sourceType} />}
+          {parent && (
+            <Badge
+              variant="outline"
+              className="bg-secondary/60 text-[10px] text-muted-foreground"
+            >
+              {parent.namespace}
+            </Badge>
+          )}
           <span className="ml-auto text-muted-foreground">
             {charCount} chars · ~{tokenEstimate} tokens
           </span>

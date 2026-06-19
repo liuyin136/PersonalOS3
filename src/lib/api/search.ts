@@ -1,77 +1,81 @@
 /**
- * Search API — Workflow 2: Retrieval, Reading & Real-time Editing Flow
- * Endpoints: /api/search
+ * Search API — Workflow 2: Hybrid retrieval + parent-document reranking
+ * Endpoints: /search
  */
-import { request, uid } from './client'
+import { request } from './client'
 import type {
   SearchQuery,
   SearchResponse,
-  SearchHit,
+  ParentResult,
+  ChunkHit,
   EditChunkRequest,
   EditChunkResponse,
+  SourceType,
 } from '@/types/rag'
 
-const mockContent = (i: number) =>
-  `## Result ${i + 1}\n\nThis is a **mock knowledge chunk** returned by the hybrid search layer.\n\nIt demonstrates Markdown rendering including:\n\n- Vector similarity scoring\n- BM25 keyword scoring\n- Reciprocal rank fusion\n\n\`\`\`yaml\nscore:\n  vector: 0.84\n  keyword: 0.62\n  hybrid: 0.79\n\`\`\`\n\n> Use the edit action to refine this chunk and re-embed it into pgvector.`
+function mapHit(c: Record<string, unknown>): ChunkHit {
+  return {
+    id: String(c.id ?? c.chunk_id ?? ''),
+    chunkIndex: Number(c.chunk_index ?? 0),
+    content: String(c.content ?? ''),
+    markdown: String(c.markdown ?? c.content ?? ''),
+    tokenCount: Number(c.token_count ?? 0),
+    vectorScore: Number(c.vector_score ?? 0),
+    keywordScore: Number(c.keyword_score ?? 0),
+    hybridScore: Number(c.hybrid_score ?? 0),
+  }
+}
+
+function mapParent(p: Record<string, unknown>): ParentResult {
+  return {
+    documentId: String(p.document_id ?? ''),
+    documentTitle: String(p.document_title ?? 'Untitled'),
+    sourceType: (p.source_type as SourceType) ?? 'markdown',
+    namespace: String(p.namespace ?? 'default'),
+    tags: (p.tags as string[]) ?? [],
+    parentScore: Number(p.parent_score ?? 0),
+    contributingChunks: Number(p.contributing_chunks ?? 0),
+    topChunks: ((p.top_chunks as Record<string, unknown>[]) ?? []).map(mapHit),
+  }
+}
 
 export const searchApi = {
-  /** Run a hybrid / vector / keyword search. */
+  /** Run a hybrid / vector / keyword search with parent reranking. */
   async search(query: SearchQuery): Promise<SearchResponse> {
-    return request<SearchResponse>(
-      '/search',
-      { method: 'POST', body: query, mockDelay: 600 },
-      () => {
-        const count = Math.min(query.topK, 6)
-        const hits: SearchHit[] = Array.from({ length: count }, (_, i) => {
-          const vectorScore = 0.95 - i * 0.07 - Math.random() * 0.05
-          const keywordScore = 0.88 - i * 0.09 - Math.random() * 0.05
-          const hybridScore =
-            query.alpha * vectorScore + (1 - query.alpha) * keywordScore
-          return {
-            id: uid('hit'),
-            documentId: `doc_${String(i + 1).padStart(3, '0')}`,
-            documentTitle: [
-              'Enterprise RAG Architecture Guide',
-              'Onboarding Handbook 2025',
-              'API Rate Limiting Policy',
-              'Incident Response Playbook',
-              'Data Governance Framework',
-              'Vector Index Tuning Notes',
-            ][i] ?? `Document ${i + 1}`,
-            chunkIndex: i * 3 + 1,
-            content: mockContent(i),
-            markdown: mockContent(i),
-            vectorScore: Number(vectorScore.toFixed(3)),
-            keywordScore: Number(keywordScore.toFixed(3)),
-            hybridScore: Number(hybridScore.toFixed(3)),
-            sourceType: (['markdown', 'pdf', 'confluence', 'docx', 'url', 'txt'] as const)[i % 6],
-            tags: [['architecture'], ['handbook'], ['api'], ['ops'], ['governance'], ['vector']][i % 6],
-            namespace: 'engineering',
-            metadata: { reranked: query.rerank ?? false },
-          }
-        })
-        return {
-          hits,
-          total: count,
-          tookMs: 120 + Math.floor(Math.random() * 80),
-          query: query.query,
-          mode: query.mode,
-        }
-      },
-    )
+    const body = {
+      query: query.query,
+      mode: query.mode,
+      namespace: query.namespace,
+      top_k: query.topK,
+      alpha: query.alpha,
+      rerank: query.rerank ?? true,
+      rerank_top: query.rerankTop ?? 10,
+      filters: query.filters,
+    }
+    const data = await request<Record<string, unknown>>('/api/search', {
+      method: 'POST',
+      body,
+    })
+    return {
+      query: String(data.query ?? query.query),
+      mode: (data.mode as SearchResponse['mode']) ?? query.mode,
+      total: Number(data.total ?? 0),
+      tookMs: Number(data.took_ms ?? 0),
+      results: ((data.results as Record<string, unknown>[]) ?? []).map(mapParent),
+    }
   },
 
   /** Edit a chunk in place (and optionally re-embed). */
   async editChunk(payload: EditChunkRequest): Promise<EditChunkResponse> {
-    return request<EditChunkResponse>(
-      `/search/${payload.id}`,
-      { method: 'PATCH', body: payload, mockDelay: 500 },
-      () => ({
-        id: payload.id,
-        content: payload.content,
-        reembedded: payload.reembed,
-        updatedAt: new Date().toISOString(),
-      }),
+    const data = await request<Record<string, unknown>>(
+      `/api/search/${payload.id}`,
+      { method: 'PATCH', body: { content: payload.content, reembed: payload.reembed } },
     )
+    return {
+      id: String(data.id),
+      content: String(data.content),
+      reembedded: Boolean(data.reembedded),
+      updatedAt: String(data.updated_at ?? ''),
+    }
   },
 }

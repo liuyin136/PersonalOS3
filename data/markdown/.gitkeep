@@ -1,0 +1,3 @@
+# Original Markdown documents are persisted here by the backend.
+# One file per document: <document_id>.md
+# Mounted into api-server and ai-worker containers.
