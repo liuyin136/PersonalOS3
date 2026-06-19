@@ -1,5 +1,5 @@
 /**
- * Sandbox RAG utilities — pure JS implementations of the FastAPI backend
+ * Local RAG utilities — pure JS implementations of the FastAPI backend
  * primitives used by the Next.js API routes (Prisma + SQLite + JS cosine).
  *
  * - countTokens: simple length/4 heuristic (no tiktoken)
@@ -8,20 +8,23 @@
  * - cosineSim:   cosine similarity between two vectors
  *
  * The hash-based embedder is NOT a real semantic model, but it has two
- * nice properties that make the demo work:
+ * nice properties that make retrieval work:
  *   1. Deterministic: same text → same vector (stable, reproducible).
  *   2. Overlap-aware:  text sharing many token hashes → higher cosine.
  * That's enough to produce meaningful ordering for hybrid retrieval.
+ *
+ * In production (docker compose), the FastAPI backend replaces these
+ * routes with real sentence-transformers embeddings + pgvector HNSW.
  */
 
 export const EMBEDDING_DIM = 384
 
-/** Tiny id generator (sandbox only). */
+/** Tiny id generator. */
 export function uid(prefix = 'id'): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`
 }
 
-/** Heuristic token count (no tiktoken in sandbox). */
+/** Heuristic token count (no tiktoken on the client). */
 export function countTokens(text: string): number {
   if (!text) return 0
   return Math.ceil(text.length / 4)
@@ -38,7 +41,6 @@ function fnv1a(str: string): number {
     hash ^= str.charCodeAt(i)
     hash = Math.imul(hash, 0x01000193)
   }
-  // force unsigned
   return hash >>> 0
 }
 
@@ -56,14 +58,11 @@ export function tokenize(text: string): string[] {
 /* ------------------------------------------------------------------ */
 
 /**
- * Deterministic hash-based embedding.
- *
- * Strategy: tokenize the text, hash each token into one of EMBEDDING_DIM
- * buckets, and accumulate +1/-1 (sign derived from a second hash) into that
- * bucket. Finally L2-normalize. This is a (very) simplified version of the
- * "hashing trick" used by HashingVectorizer — text sharing many tokens
- * produces positively-correlated vectors, so cosine similarity reflects
- * lexical overlap.
+ * Deterministic hash-based embedding (hashing trick).
+ * Tokenize → hash each token into one of EMBEDDING_DIM buckets →
+ * accumulate +1/-1 → L2-normalize. Text sharing many tokens produces
+ * positively-correlated vectors, so cosine similarity reflects lexical
+ * overlap.
  */
 export function embed(text: string): number[] {
   const vec = new Float32Array(EMBEDDING_DIM)
@@ -74,19 +73,16 @@ export function embed(text: string): number[] {
     const sign = (h >>> 16) & 1 ? 1 : -1
     vec[idx] += sign
   }
-  // L2 normalize
   let norm = 0
   for (let i = 0; i < vec.length; i++) norm += vec[i] * vec[i]
   norm = Math.sqrt(norm)
   if (norm > 0) {
     for (let i = 0; i < vec.length; i++) vec[i] /= norm
   }
-  // return plain number[] for JSON serialization
   return Array.from(vec)
 }
 
-/** Cosine similarity. Both vectors are assumed L2-normalized by `embed`,
- *  but we still divide by norms to be safe. */
+/** Cosine similarity between two vectors. */
 export function cosineSim(a: number[], b: number[]): number {
   if (!a.length || !b.length) return 0
   const len = Math.min(a.length, b.length)
@@ -122,14 +118,10 @@ export interface ChunkResult {
 /**
  * Recursive markdown-aware text splitter.
  *
- * For `markdown` strategy we split on `\n## ` (H2 headers) first, falling
- * back to `\n\n` paragraphs. For `recursive` we split on `\n\n`, then `\n`,
- * then `. ` / sentences. For `fixed` and `semantic` we just chunk on
- * `chunkSize` (semantic == fixed in the sandbox).
- *
- * After the first pass we greedily merge fragments until we exceed
- * `chunkSize` tokens, then emit. The first `chunkOverlap` tokens of the
- * next chunk are taken from the tail of the previous chunk.
+ * `markdown` splits on `\n## ` (H2) then `\n\n`. `recursive` splits on
+ * `\n\n` then sentences. `fixed`/`semantic` chunk on word count.
+ * Fragments are greedily merged up to `chunkSize` tokens; the next
+ * chunk starts with `chunkOverlap` tokens from the previous tail.
  */
 export function chunkText(
   text: string,
@@ -142,13 +134,11 @@ export function chunkText(
   const size = Math.max(50, chunkSize)
   const overlap = Math.max(0, Math.min(chunkOverlap, size - 1))
 
-  // Step 1 — produce a list of "atomic" fragments based on the strategy.
   const fragments: string[] = []
   if (strategy === 'markdown') {
     const sections = cleanText.split(/(?=\n#{1,3}\s)/)
     for (const sec of sections) {
       if (!sec.trim()) continue
-      // further split each section on double newlines
       for (const para of sec.split(/\n\n+/)) {
         if (para.trim()) fragments.push(para.trim())
       }
@@ -156,7 +146,6 @@ export function chunkText(
   } else if (strategy === 'recursive') {
     for (const para of cleanText.split(/\n\n+/)) {
       if (!para.trim()) continue
-      // split paragraphs into sentences on `. ` / `! ` / `? ` / newlines
       const sentences = para
         .split(/(?<=[.!?])\s+|\n+/)
         .map((s) => s.trim())
@@ -164,9 +153,7 @@ export function chunkText(
       fragments.push(...sentences)
     }
   } else {
-    // fixed / semantic — split on words and re-group
     const words = cleanText.split(/\s+/).filter(Boolean)
-    // ~4 chars/token → use ~4*size words per chunk
     const wordsPerChunk = Math.max(1, size * 4)
     for (let i = 0; i < words.length; i += wordsPerChunk) {
       fragments.push(words.slice(i, i + wordsPerChunk).join(' '))
@@ -177,7 +164,6 @@ export function chunkText(
     fragments.push(cleanText.trim())
   }
 
-  // Step 2 — merge fragments greedily up to `size` tokens.
   const chunks: string[] = []
   let current = ''
   let currentTokens = 0
@@ -186,7 +172,6 @@ export function chunkText(
     const fragTokens = countTokens(frag)
     if (currentTokens + fragTokens > size && current) {
       chunks.push(current.trim())
-      // start next chunk with overlap from the tail of the previous chunk
       if (overlap > 0) {
         const tailTokens: string[] = []
         let tailCount = 0
@@ -208,7 +193,6 @@ export function chunkText(
   }
   if (current.trim()) chunks.push(current.trim())
 
-  // Step 3 — single huge fragment (> size) gets hard-split by characters.
   const finalChunks: string[] = []
   for (const ch of chunks) {
     const tk = countTokens(ch)
@@ -216,7 +200,6 @@ export function chunkText(
       finalChunks.push(ch)
       continue
     }
-    // hard split by approx token budget (4 chars/token)
     const charBudget = size * 4
     const overlapChars = overlap * 4
     for (let i = 0; i < ch.length; i += charBudget - overlapChars) {
@@ -240,8 +223,8 @@ export function chunkText(
 
 /**
  * Lexical overlap score normalized to [0, 1].
- * Counts how many unique query terms appear in the chunk, divided by the
- * number of unique query terms. Empty queries → 0.
+ * Counts how many unique query terms appear in the chunk, divided by
+ * the number of unique query terms. Empty queries → 0.
  */
 export function keywordScore(query: string, content: string): number {
   const qTerms = new Set(tokenize(query))

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { chunkText, uid } from '@/lib/sandbox/rag'
+import { chunkText, uid } from '@/lib/rag/rag'
 
 interface PreviewBody {
   strategy?: 'fixed' | 'recursive' | 'semantic' | 'markdown'

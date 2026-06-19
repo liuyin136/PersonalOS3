@@ -422,3 +422,41 @@ Stage Summary:
 - Hybrid search implements EXACT spec: vector(chunks)→top chunks→parent MD weighted aggregate (rank-decay 1.0/0.6/0.36)→cross-encoder rerank parents→return ParentResult[] w/ top_chunks.
 - Frontend: all 4 workflows wired to real backend calls, POC/demo data removed, /health + /settings pages added, parent-reranked search UI, nav updated.
 - docker compose up -d --build ready (pgvector + Redis + FastAPI + Arq worker + frontend).
+
+---
+Task ID: OPT-1
+Agent: main
+Task: Architecture optimization — remove all sandbox references + enhanced Markdown editor with clipboard image paste + fulltext/render toggle
+
+Work Log:
+- Audited codebase: found 16 files with "sandbox" references (lib/sandbox/, API routes, health page, client.ts comments)
+- Renamed lib/sandbox/ → lib/rag/ (rag.ts + mappers.ts); updated all 13 API route imports from @/lib/sandbox/ → @/lib/rag/
+- Removed every "sandbox" word from comments/strings across: client.ts, health/page.tsx (2), api/health/route.ts (3), api/ingest/route.ts (2), api/ingest/[id]/commit/route.ts (1), api/chat/route.ts (4), api/chat/stream/route.ts (4), api/search/route.ts (2), api/cart/optimize/route.ts (4)
+- Built src/components/editor/markdown-editor.tsx: MarkdownEditor component with:
+  * Clipboard image paste (Ctrl/Cmd+V) → instant upload to /data/pic via /api/images/upload → MD image syntax ![alt](url) inserted at cursor
+  * Fulltext ↔ Render mode toggle (segmented control) with live sync
+  * File picker for image uploads (Upload image button)
+  * Drag-and-drop image files into textarea
+  * Image management strip (thumbnails + alt + remove button)
+  * Render mode uses react-markdown with prose-rag class (Notion green)
+- Created src/app/api/images/upload/route.ts (POST: multipart upload → /data/pic → unique filename via sha256 hash + timestamp)
+- Created src/app/api/images/[filename]/route.ts (GET: serve image with 1-year cache; DELETE: remove)
+- Created src/lib/api/images.ts (imagesApi.upload + delete), exported from index.ts
+- Integrated MarkdownEditor into:
+  * src/components/ingest/upload-zone.tsx: added content state + MarkdownEditor field (rows=10) with "paste images with Ctrl/Cmd+V" hint; applyDroppedFile now loads text files into editor; payload includes content; resetForm clears content
+  * src/components/search/edit-modal.tsx: replaced plain Textarea with MarkdownEditor (compact mode, rows=12)
+- Backend: created backend/app/routers/images.py (FastAPI: POST /images/upload, GET/DELETE /images/{filename}); registered in main.py; added PIC_DIR to config.py
+- Infra: docker-compose.yml — added ./data/pic:/data/pic volume + PIC_DIR env to api-server and ai-worker; created data/pic/.gitkeep
+- Verification: lint 0 errors, all 8 routes 200, image upload+serving tested (POST returns URL, GET serves image/png), Agent Browser confirmed:
+  * Ingest page: editor with Fulltext/Render toggle + Upload image button; typed markdown with image ref → render mode showed H1 + bold + image + bullets; ingested "Editor Test Doc" → 1 chunk synced
+  * Search edit modal: MarkdownEditor with toggle; render mode rendered RAG Architecture headings/paragraphs
+  * Health page: 8/9 OK (Redis DOWN = expected, no Redis in local dev)
+  * No console/runtime errors
+
+Stage Summary:
+- ALL sandbox references eliminated (16 files cleaned); lib/sandbox/ → lib/rag/
+- Enhanced MarkdownEditor: clipboard paste → /data/pic upload → MD syntax insertion; Fulltext/Render toggle; image management strip; drag-drop; file picker
+- Integrated into ingest (content field) + search edit modal
+- Backend FastAPI image router + Next.js API routes mirror same contract
+- docker-compose extended with /data/pic volume; PIC_DIR env wired
+- All 4 RAG workflows preserved; lint clean; browser-verified

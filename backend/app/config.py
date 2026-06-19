@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # --- Storage ---
     MARKDOWN_DIR: str = Field(default="/data/markdown")
+    PIC_DIR: str = Field(default="/data/pic")
 
     # --- Embedding ---
     EMBEDDING_MODEL: str = Field(default="bge-small-en-v1.5")

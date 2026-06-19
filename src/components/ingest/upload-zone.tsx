@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { MarkdownEditor } from '@/components/editor/markdown-editor'
 import type { IngestRequest, SourceType, ChunkingConfig } from '@/types/rag'
 
 interface UploadZoneProps {
@@ -99,6 +100,7 @@ export function UploadZone({ onSubmit, isSubmitting }: UploadZoneProps) {
   const [title, setTitle] = useState('')
   const [sourceType, setSourceType] = useState<SourceType>('markdown')
   const [sourceUri, setSourceUri] = useState('')
+  const [content, setContent] = useState('')
   const [namespace, setNamespace] = useState<string>('engineering')
   const [tagsInput, setTagsInput] = useState('')
   const [strategy, setStrategy] = useState<ChunkingConfig['strategy']>('recursive')
@@ -111,7 +113,15 @@ export function UploadZone({ onSubmit, isSubmitting }: UploadZoneProps) {
     const type = detectSourceFromFilename(file.name)
     setSourceType(type)
     setTitle((prev) => prev || file.name.replace(/\.[^.]+$/, ''))
-    setSourceUri((prev) => prev || `s3://verdant/uploads/${file.name}`)
+    setSourceUri((prev) => prev || `upload://${file.name}`)
+    if (type === 'markdown' || type === 'txt' || type === 'html') {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const text = typeof reader.result === 'string' ? reader.result : ''
+        setContent(text)
+      }
+      reader.readAsText(file)
+    }
   }
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
@@ -154,6 +164,7 @@ export function UploadZone({ onSubmit, isSubmitting }: UploadZoneProps) {
       namespace,
       tags,
       chunking: buildConfig(),
+      content,
     }
     void onSubmit(payload)
   }
@@ -161,6 +172,7 @@ export function UploadZone({ onSubmit, isSubmitting }: UploadZoneProps) {
   function resetForm() {
     setTitle('')
     setSourceUri('')
+    setContent('')
     setTagsInput('')
     setStrategy('recursive')
     setChunkSize(800)
@@ -318,6 +330,28 @@ export function UploadZone({ onSubmit, isSubmitting }: UploadZoneProps) {
                 onChange={(e) => setTagsInput(e.target.value)}
               />
             </div>
+          </div>
+
+          {/* Markdown content editor with clipboard image paste */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="content">
+                Content{' '}
+                <span className="text-xs font-normal text-muted-foreground">
+                  (Markdown · paste images with Ctrl/Cmd+V)
+                </span>
+              </Label>
+              <span className="text-xs text-muted-foreground">
+                {content.length.toLocaleString()} chars
+              </span>
+            </div>
+            <MarkdownEditor
+              id="content"
+              value={content}
+              onChange={setContent}
+              rows={10}
+              placeholder="Write or paste Markdown here. Paste an image (Ctrl/Cmd+V) to upload it to /data/pic and insert the reference automatically."
+            />
           </div>
 
           <Separator />

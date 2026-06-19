@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { embed, countTokens } from '@/lib/sandbox/rag'
+import { embed, countTokens } from '@/lib/rag/rag'
 
 interface PatchBody {
   content: string

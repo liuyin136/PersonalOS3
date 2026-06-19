@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { safeParseArray } from '@/lib/sandbox/mappers'
+import { safeParseArray } from '@/lib/rag/mappers'
 
 /**
  * GET /api/knowledge/stats

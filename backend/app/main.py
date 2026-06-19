@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import ingest, search, chat, settings as settings_router, knowledge, health
+from .routers import ingest, search, chat, settings as settings_router, knowledge, health, images
 
 
 @asynccontextmanager
@@ -37,6 +37,7 @@ app.include_router(chat.router)
 app.include_router(settings_router.router)
 app.include_router(knowledge.router)
 app.include_router(health.router)
+app.include_router(images.router)
 
 
 @app.get("/")

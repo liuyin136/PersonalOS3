@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { uid, countTokens } from '@/lib/sandbox/rag'
+import { uid, countTokens } from '@/lib/rag/rag'
 
 interface ChatRequestBody {
   messages: { role: string; content: string }[]
@@ -57,7 +57,7 @@ function buildMockReply(payload: ChatRequestBody): string {
     .join('\n')
 
   return [
-    `> **Sandbox assistant** — no live LLM is configured in this preview. The message below shows what *would* be sent to the backend model and a mock structured response.`,
+    `> **Local assistant** — no live LLM endpoint is configured. The message below shows what *would* be sent to the backend model and a structured mock response.`,
     ``,
     `### Request summary`,
     `- **Template**: ${tplName} (\`${payload.templateId ?? '—'}\`)`,
@@ -72,11 +72,11 @@ function buildMockReply(payload: ChatRequestBody): string {
     ctxLines || '_no items in cart_',
     ``,
     `### Mock assistant response`,
-    `Based on the ${ctxCount} context item${ctxCount === 1 ? '' : 's'} attached and the **${tplName}** template, here is a sandbox-generated answer:`,
+    `Based on the ${ctxCount} context item${ctxCount === 1 ? '' : 's'} attached and the **${tplName}** template, here is a generated answer:`,
     ``,
     `> The structured-chat pipeline successfully assembled a prompt of ~${ctxTokens + countTokens(lastUser)} tokens and would have streamed a real answer from \`${model}\` at temperature ${payload.parameters?.temperature ?? 0.3}. To enable real completions, set \`OPENAI_API_BASE\` / \`OPENAI_API_KEY\` and deploy the FastAPI backend.`,
     ``,
-    `_(Sandbox response · id \`${uid('msg')}\`)_`,
+    `_(Local response · id \`${uid('msg')}\`)_`,
   ].join('\n')
 }
 

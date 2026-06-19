@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { MarkdownEditor } from '@/components/editor/markdown-editor'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
@@ -127,21 +127,17 @@ export function EditModal({
           </span>
         </div>
 
-        {/* Content textarea */}
+        {/* Content editor */}
         <div className="space-y-2">
-          <Label
-            htmlFor="chunk-content"
-            className="text-xs font-medium text-muted-foreground"
-          >
-            Chunk content (Markdown supported)
+          <Label className="text-xs font-medium text-muted-foreground">
+            Chunk content (Markdown · paste images with Ctrl/Cmd+V)
           </Label>
-          <Textarea
-            id="chunk-content"
+          <MarkdownEditor
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={setContent}
             rows={12}
-            className="scrollbar-thin font-mono text-xs"
-            spellCheck={false}
+            compact
+            placeholder="Edit the chunk content. Paste an image to upload it and insert the reference."
           />
         </div>
 

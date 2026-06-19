@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { mapDoc } from '@/lib/sandbox/mappers'
-import { chunkText, embed } from '@/lib/sandbox/rag'
+import { mapDoc } from '@/lib/rag/mappers'
+import { chunkText, embed } from '@/lib/rag/rag'
 
 interface IngestBody {
   title: string
@@ -19,12 +19,12 @@ interface IngestBody {
 
 /**
  * POST /api/ingest
- * Create a new ingestion job in the sandbox:
+ * Create a new ingestion job:
  *  1. Upsert namespace (creates if missing).
  *  2. Create Document row with status 'pending'.
- *  3. Persist the markdown content directly on the doc's markdownPath
- *     (sandbox simplicity — production writes to /data/markdown/<id>.md).
- *  4. Run chunking + hash-based embeddings inline.
+ *  3. Persist the markdown content (stored on markdownPath field;
+ *     production backend writes to /data/markdown/<id>.md).
+ *  4. Run chunking + embeddings inline.
  *  5. Update status to 'synced', chunkCount, tokenCount.
  *
  * Returns the document in snake_case.

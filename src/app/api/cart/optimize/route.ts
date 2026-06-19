@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { countTokens } from '@/lib/sandbox/rag'
+import { countTokens } from '@/lib/rag/rag'
 
 interface CartItem {
   id: string
@@ -24,9 +24,9 @@ interface OptimizeBody {
 
 /**
  * POST /api/cart/optimize
- * Sandbox optimization. For 'truncate' strategy, drops items (lowest-token
+ * Cart optimization. For 'truncate' strategy, drops items (lowest-token
  * first) until under targetTokens. All other strategies return items
- * unchanged but still report original/optimized token counts (no-op).
+ * unchanged but still report original/optimized token counts.
  *
  * In production this would call the LLM (summarize) or use embedding
  * similarity (deduplicate). The frontend just displays before/after.
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       optimizedItems = items.filter((i) => !dropped.has(i.id))
       removedCount = dropped.size
     } else if (strategy === 'deduplicate') {
-      // Sandbox: drop exact-duplicate content (by content hash)
+      // Drop exact-duplicate content (by content hash)
       const seen = new Set<string>()
       const deduped: CartItem[] = []
       for (const it of items) {
@@ -82,14 +82,14 @@ export async function POST(req: NextRequest) {
       }
       optimizedItems = deduped
     } else if (strategy === 'reorder') {
-      // Sandbox: keep highest-token items first (most "information-dense" first)
+      // Keep highest-token items first (most information-dense first)
       optimizedItems = [...items].sort(
         (a, b) =>
           (b.tokenCount ?? countTokens(b.content)) -
           (a.tokenCount ?? countTokens(a.content)),
       )
     }
-    // 'none' and 'summarize' fall through unchanged in the sandbox
+    // 'none' and 'summarize' fall through unchanged
 
     const optimizedTokens = optimizedItems.reduce(
       (s, i) => s + (i.tokenCount ?? countTokens(i.content)),

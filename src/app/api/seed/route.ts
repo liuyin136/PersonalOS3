@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { chunkText, embed } from '@/lib/sandbox/rag'
-import { mapDoc } from '@/lib/sandbox/mappers'
+import { chunkText, embed } from '@/lib/rag/rag'
+import { mapDoc } from '@/lib/rag/mappers'
 
 /** Sample markdown documents for the seed endpoint. */
 const SAMPLE_DOCS: {

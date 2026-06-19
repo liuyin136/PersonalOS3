@@ -4,9 +4,9 @@
  * In production: NEXT_PUBLIC_API_BASE_URL points to the FastAPI service
  * (e.g. http://api-server:8000 or http://localhost:8000).
  *
- * In the sandbox/preview: NEXT_PUBLIC_API_BASE_URL defaults to '' (same
- * origin), so calls hit the Next.js API routes under /app/api/* which
- * mirror the backend contract using Prisma + SQLite + JS cosine sim.
+ * By default NEXT_PUBLIC_API_BASE_URL is '' (same origin), so calls hit
+ * the Next.js API routes under /app/api/* which mirror the backend
+ * contract using Prisma + SQLite + JS cosine similarity.
  *
  * The contract is identical — only the implementation differs.
  */

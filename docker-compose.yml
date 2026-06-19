@@ -51,9 +51,11 @@ services:
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql+asyncpg://postgres:mysecretpassword@personalos-db:5432/personalos
       - MARKDOWN_DIR=/data/markdown
+      - PIC_DIR=/data/pic
       - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
     volumes:
       - ./data/markdown:/data/markdown
+      - ./data/pic:/data/pic
     depends_on:
       personalos-db:
         condition: service_healthy
@@ -74,8 +76,10 @@ services:
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql+asyncpg://postgres:mysecretpassword@personalos-db:5432/personalos
       - MARKDOWN_DIR=/data/markdown
+      - PIC_DIR=/data/pic
     volumes:
       - ./data/markdown:/data/markdown
+      - ./data/pic:/data/pic
     depends_on:
       personalos-db:
         condition: service_healthy

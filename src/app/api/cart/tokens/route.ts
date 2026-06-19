@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { countTokens } from '@/lib/sandbox/rag'
+import { countTokens } from '@/lib/rag/rag'
 
 interface TokensBody {
   text?: string

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { mapDoc } from '@/lib/sandbox/mappers'
-import { chunkText, embed } from '@/lib/sandbox/rag'
+import { mapDoc } from '@/lib/rag/mappers'
+import { chunkText, embed } from '@/lib/rag/rag'
 
 /**
  * POST /api/ingest/:id/commit
@@ -9,7 +9,7 @@ import { chunkText, embed } from '@/lib/sandbox/rag'
  * (clears previous chunks and re-creates them). Returns the updated document.
  *
  * In the FastAPI backend this is what the Arq worker executes after the
- * user confirms a chunking preview. In the sandbox we do it inline.
+ * user confirms a chunking preview. Done inline here.
  */
 export async function POST(
   _req: Request,

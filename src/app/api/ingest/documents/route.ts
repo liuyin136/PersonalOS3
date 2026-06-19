@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { mapDoc } from '@/lib/sandbox/mappers'
+import { mapDoc } from '@/lib/rag/mappers'
 
 /**
  * GET /api/ingest/documents

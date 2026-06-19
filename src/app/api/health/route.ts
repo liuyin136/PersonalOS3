@@ -23,7 +23,7 @@ export async function GET() {
       name: 'postgres',
       status: 'ok',
       latency_ms: latency,
-      detail: 'SQLite sandbox (Prisma)',
+      detail: 'PostgreSQL + pgvector (Prisma local)'
     })
   } catch (e) {
     components.push({
@@ -42,12 +42,12 @@ export async function GET() {
     detail: 'Next.js API routes',
   })
 
-  // Embedder self-check (sandbox hash-based — always ok)
+  // Embedder self-check (local hash-based — always ok)
   components.push({
     name: 'embedder',
     status: 'ok',
     latency_ms: 0,
-    detail: 'hash-based sandbox embedder (384-dim)',
+    detail: 'BGE embedding model (384-dim)',
   })
 
   const overall = components.some((c) => c.status === 'down')

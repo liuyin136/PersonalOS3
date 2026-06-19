@@ -5,8 +5,8 @@ import {
   cosineSim,
   keywordScore,
   tokenize,
-} from '@/lib/sandbox/rag'
-import { safeParseArray } from '@/lib/sandbox/mappers'
+} from '@/lib/rag/rag'
+import { safeParseArray } from '@/lib/rag/mappers'
 
 interface SearchBody {
   query: string
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
       include: {
         document: { include: { namespace: true } },
       },
-      take: 2000, // sandbox cap
+      take: 2000, // retrieval cap
     })
 
     if (chunks.length === 0) {
@@ -186,7 +186,7 @@ export async function POST(req: NextRequest) {
     parentResults.sort((a, b) => b.parent_score - a.parent_score)
     const finalResults = parentResults.slice(0, rerankTop)
 
-    void body.rerank // sandbox: rerank is implicit (we already reranked by parent score)
+    void body.rerank // rerank is implicit (we already reranked by parent score)
 
     return NextResponse.json({
       query,

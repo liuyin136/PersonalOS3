@@ -293,7 +293,7 @@ export default function HealthPage() {
       await request('/api/seed', { method: 'POST' })
       toast.success('Sample data seeded', {
         description:
-          'The sandbox database now has demo documents & chunks.',
+          'The database now has demo documents & chunks.',
       })
       // Re-run checks so users see fresh state.
       void runChecks()
@@ -323,7 +323,7 @@ export default function HealthPage() {
       <PageHeader
         icon={Activity}
         title="System Health"
-        description="Live status of every backend dependency and RAG endpoint. Re-run checks any time, or seed sample data to populate the sandbox."
+        description="Live status of every backend dependency and RAG endpoint. Re-run checks any time, or seed sample data to populate the database."
         actions={
           <>
             <Button
