@@ -45,5 +45,7 @@ async def get_db() -> AsyncIterator[AsyncSession]:
     async with SessionLocal() as session:
         try:
             yield session
-        finally:
-            await session.close()
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise

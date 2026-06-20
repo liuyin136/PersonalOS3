@@ -113,6 +113,8 @@ async def run_ingest(ctx: dict, document_id: str, content: str, config: dict) ->
             job.finished_at = __import__("datetime").datetime.utcnow()
             await db.flush()
             raise
+        finally:
+            await db.commit()
 
     return f"ingested {document_id}"
 

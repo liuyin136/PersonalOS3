@@ -10,11 +10,11 @@ import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..models import Document, Namespace, Chunk, IngestJob
+from ..models import Document, Namespace
 from ..schemas import (
     IngestRequest,
     DocumentOut,
@@ -101,7 +101,7 @@ async def create_ingest(req: IngestRequest, db: AsyncSession = Depends(get_db)):
     except Exception:
         # Inline fallback (dev mode without Redis) — import the task fn directly
         from ..worker import run_ingest
-        await run_ingest(doc_id, content, req.chunking.model_dump())
+        await run_ingest({}, doc_id, content, req.chunking.model_dump())
 
     return _doc_to_out(doc, ns.name)
 
@@ -169,7 +169,7 @@ async def commit_ingest(document_id: str, db: AsyncSession = Depends(get_db)):
         await enqueue_ingest(document_id, content, config)
     except Exception:
         from ..worker import run_ingest
-        await run_ingest(document_id, content, config)
+        await run_ingest({}, document_id, content, config)
     return _doc_to_out(doc, ns_name)
 
 
